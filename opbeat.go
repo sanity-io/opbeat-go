@@ -261,10 +261,6 @@ func (opbeat *Opbeat) getStacktrace(filter StackFilterFunc) (stacko.Stacktrace, 
 		return nil, err
 	}
 
-	if filter != nil {
-		fmt.Printf("USING STACK FILTER\n\r")
-	}
-
 	// Skip the frames from this library
 	for i := 0; i < len(stacktrace); i++ {
 		frame := (*Frame)(&stacktrace[i])
@@ -550,8 +546,6 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 		origin := stacktrace[0]
 		p.Culprit = origin.FunctionName
 	}
-
-	fmt.Printf("OPBEAT PACKET: %#v\n\r", p)
 
 	return p, nil
 }
