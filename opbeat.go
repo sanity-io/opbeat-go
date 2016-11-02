@@ -52,7 +52,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/hallas/stacko"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -62,6 +61,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/hallas/stacko"
 )
 
 const (
@@ -82,6 +83,10 @@ const (
 	Fatal         = "fatal"
 )
 
+type Frame stacko.Frame
+
+type StackFilterFunc func(frame *Frame) bool
+
 // Options is a struct used to customise an opbeat message. Use it by setting
 // its pointers to structs with additional custom information.
 type Options struct {
@@ -89,6 +94,7 @@ type Options struct {
 	*User
 	*HTTP
 	*Exception
+	StackFilter StackFilterFunc
 }
 
 // Extra is a map of custom string keys and interface{} values. This map will be
@@ -112,6 +118,7 @@ type HTTP struct {
 	URL     string            `json:"url"`
 	Method  string            `json:"method"`
 	Headers map[string]string `json:"headers"`
+	Data    string            `json:"data"`
 }
 
 // Exception is a struct with information about an error that occured
@@ -236,6 +243,7 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 		scheme + "://" + r.Host + r.URL.String(),
 		r.Method,
 		headers,
+		options.Data,
 	}
 
 	if options == nil {
@@ -247,16 +255,23 @@ func (opbeat *Opbeat) CaptureErrorWithRequest(e error, r *http.Request, options 
 	return opbeat.CaptureError(e, options)
 }
 
-func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
+func (opbeat *Opbeat) getStacktrace(filter StackFilterFunc) (stacko.Stacktrace, error) {
 	stacktrace, err := stacko.NewStacktrace(3)
 	if err != nil {
 		return nil, err
 	}
 
+	if filter != nil {
+		fmt.Printf("USING STACK FILTER\n\r")
+	}
+
 	// Skip the frames from this library
 	for i := 0; i < len(stacktrace); i++ {
+		frame := (*Frame)(&stacktrace[i])
 		if stacktrace[i].PackageName != opbeat.thisPackage {
-			return stacktrace[i:], nil
+			if filter == nil || filter(frame) {
+				return stacktrace[i:], nil
+			}
 		}
 	}
 
@@ -267,7 +282,7 @@ func (opbeat *Opbeat) getStacktrace() (stacko.Stacktrace, error) {
 // are written to Opbeat as a part of the log. Please take care that any values
 // in this map can be marshalled into JSON.
 func (opbeat *Opbeat) CaptureError(e error, options *Options) error {
-	stacktrace, err := opbeat.getStacktrace()
+	stacktrace, err := opbeat.getStacktrace(options.StackFilter)
 
 	if err != nil {
 		return err
@@ -535,6 +550,8 @@ func newPacket(message string, stacktrace stacko.Stacktrace, options *Options) (
 		origin := stacktrace[0]
 		p.Culprit = origin.FunctionName
 	}
+
+	fmt.Printf("OPBEAT PACKET: %#v\n\r", p)
 
 	return p, nil
 }
